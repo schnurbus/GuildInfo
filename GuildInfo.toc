@@ -3,7 +3,7 @@
 ## Notes: Zeigt die Gildenmitglieder mit Talentverteilung, Berufen und Main/Twink-Zuordnung an.
 ## Notes-enUS: Shows guild members with talent specs, professions and main/alt assignment.
 ## Author: Pascal
-## Version: 1.1.2
+## Version: 1.1.3
 ## SavedVariables: GuildInfoDB
 ## X-Category: Guild
 ## X-Website: https://github.com/schnurbus/GuildInfo
