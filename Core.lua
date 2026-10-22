@@ -38,6 +38,10 @@ local defaults = {
 			maxRank   = 1,      -- Bearbeitungen nur mit Rang-Index <= maxRank teilen (0 = Gildenmeister)
 		},
 	},
+	global = {
+		-- "YYYY-MM-DD" des letzten Chat-Hinweises auf eine neuere Addon-Version
+		versionNoticeDay = "",
+	},
 	factionrealm = {
 		lastGuild = nil,
 		guilds = {

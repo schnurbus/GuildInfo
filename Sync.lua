@@ -25,7 +25,7 @@ local Sync = {}
 GuildInfo.Sync = Sync
 ns.Sync = Sync
 
-local time, pairs, ipairs, tinsert, tsort = time, pairs, ipairs, table.insert, table.sort
+local time, date, pairs, ipairs, tinsert, tsort = time, date, pairs, ipairs, table.insert, table.sort
 
 Sync.PREFIX   = "GuildInfo"
 Sync.PROTOCOL = 1
@@ -147,6 +147,44 @@ function Sync:GetPeerList()
 		return a.name < b.name
 	end)
 	return list
+end
+
+-- "1.2.3" -> { 1, 2, 3 }; alles andere (z.B. "dev") ist nicht vergleichbar
+local function ParseVersion(v)
+	if type(v) ~= "string" then return nil end
+	local parts = {}
+	for n in v:gmatch("%d+") do
+		tinsert(parts, tonumber(n))
+	end
+	if #parts == 0 then return nil end
+	local rebuilt = tostring(parts[1])
+	for i = 2, #parts do
+		rebuilt = rebuilt .. "." .. parts[i]
+	end
+	if rebuilt ~= v then return nil end
+	return parts
+end
+
+local function IsNewerVersion(remote, localVer)
+	local a, b = ParseVersion(remote), ParseVersion(localVer)
+	if not a or not b then return false end
+	local n = #a > #b and #a or #b
+	for i = 1, n do
+		local x, y = a[i] or 0, b[i] or 0
+		if x ~= y then return x > y end
+	end
+	return false
+end
+
+-- Einmal pro Sitzung und höchstens einmal pro Kalendertag
+function Sync:MaybeNotifyNewerVersion(remote)
+	if self.versionNotified then return end
+	if not IsNewerVersion(remote, GuildInfo.version) then return end
+	self.versionNotified = true
+	local today = date("%Y-%m-%d")
+	if GuildInfo.db.global.versionNoticeDay == today then return end
+	GuildInfo.db.global.versionNoticeDay = today
+	GuildInfo:Print(L["A newer version of GuildInfo was seen: v%s (you have v%s)."]:format(remote, GuildInfo.version))
 end
 
 function Sync:NotifyUI()
@@ -385,6 +423,7 @@ function Sync:OnHello(msg, sender)
 		enabled = msg.en and true or false,
 		maxRank = msg.mr,
 	}
+	self:MaybeNotifyNewerVersion(msg.ver)
 	if not msg.r then
 		-- Broadcast: mit eigenem HELLO + SELF antworten
 		self:SendHello(sender)

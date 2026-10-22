@@ -36,6 +36,7 @@ L["authorized"] = "berechtigt"
 L["not authorized"] = "nicht berechtigt"
 L["edits off"] = "keine Bearbeitungen"
 L["Sync: %d entries received from %s."] = "Sync: %d Einträge von %s übernommen."
+L["A newer version of GuildInfo was seen: v%s (you have v%s)."] = "Eine neuere GuildInfo-Version wurde gesehen: v%s (du hast v%s)."
 L["Last edited by %s on %s"] = "Zuletzt geändert von %s am %s"
 
 -- Filter
