@@ -33,8 +33,8 @@ local defaults = {
 		lastTab      = "members",
 		minimapHint  = true,
 		sync = {
-			enabled   = true,   -- Synchronisation per Addon-Nachrichten
-			shareSelf = true,   -- eigene Specs/Berufe an die ganze Gilde senden
+			enabled   = true,   -- Bearbeitungen mit Rängen bis maxRank austauschen
+			shareSelf = true,   -- eigene Specs/Berufe an die ganze Gilde senden (unabhängig von enabled)
 			maxRank   = 1,      -- Bearbeitungen nur mit Rang-Index <= maxRank teilen (0 = Gildenmeister)
 		},
 	},

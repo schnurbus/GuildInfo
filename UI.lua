@@ -1116,8 +1116,25 @@ function UI:BuildOptionsTab(container)
 	syncGroup:SetLayout("Flow")
 	scroll:AddChild(syncGroup)
 
+	local shareCB = AceGUI:Create("CheckBox")
+	shareCB:SetLabel(L["Share my own specs and professions with the whole guild"])
+	shareCB:SetFullWidth(true)
+	shareCB:SetValue(p.sync.shareSelf)
+	shareCB:SetCallback("OnValueChanged", function(widget, event, value)
+		p.sync.shareSelf = value and true or false
+		if value and Sync then Sync:SendHello() end
+	end)
+	syncGroup:AddChild(shareCB)
+	o.shareCB = shareCB
+
+	local shareHint = AceGUI:Create("Label")
+	shareHint:SetFullWidth(true)
+	shareHint:SetColor(0.6, 0.6, 0.6)
+	shareHint:SetText(L["Your specs and professions are sent to every guild member using GuildInfo. This does not use the rank limit."])
+	syncGroup:AddChild(shareHint)
+
 	local enabledCB = AceGUI:Create("CheckBox")
-	enabledCB:SetLabel(L["Enable synchronization with guild members"])
+	enabledCB:SetLabel(L["Exchange edits with selected ranks"])
 	enabledCB:SetFullWidth(true)
 	enabledCB:SetValue(p.sync.enabled)
 	enabledCB:SetCallback("OnValueChanged", function(widget, event, value)
@@ -1127,17 +1144,6 @@ function UI:BuildOptionsTab(container)
 	end)
 	syncGroup:AddChild(enabledCB)
 	o.enabledCB = enabledCB
-
-	local shareCB = AceGUI:Create("CheckBox")
-	shareCB:SetLabel(L["Share my own specs and professions with the whole guild"])
-	shareCB:SetFullWidth(true)
-	shareCB:SetValue(p.sync.shareSelf)
-	shareCB:SetCallback("OnValueChanged", function(widget, event, value)
-		p.sync.shareSelf = value and true or false
-		if value and Sync then Sync:QueueSelf() end
-	end)
-	syncGroup:AddChild(shareCB)
-	o.shareCB = shareCB
 
 	local rankDD = AceGUI:Create("Dropdown")
 	rankDD:SetLabel(L["Share edits with ranks up to and including"])
@@ -1170,8 +1176,9 @@ function UI:BuildOptionsTab(container)
 	local rankHint = AceGUI:Create("Label")
 	rankHint:SetFullWidth(true)
 	rankHint:SetColor(0.6, 0.6, 0.6)
-	rankHint:SetText(L["Edits (main/alt assignment, notes, entries of other members) are only exchanged with online members whose rank is within this limit. All participants should use the same rank limit. Your own specs and professions are shared with everyone."])
+	rankHint:SetText(L["Edits (main/alt assignment, notes, entries of other members) are only exchanged with online members whose rank is within this limit. All participants should use the same rank limit."])
 	syncGroup:AddChild(rankHint)
+	o.rankHint = rankHint
 
 	-- Sync-Status --------------------------------------------------------------
 	local status = AceGUI:Create("InlineGroup")
@@ -1188,10 +1195,16 @@ end
 function UI:UpdateOptionsState()
 	local o = self.options
 	if not o then return end
-	local enabled = GuildInfo.db.profile.sync.enabled
-	o.shareCB:SetDisabled(not enabled)
-	o.rankDD:SetDisabled(not enabled)
-	o.syncBtn:SetDisabled(not enabled)
+	local edits = GuildInfo.db.profile.sync.enabled
+	o.rankDD:SetDisabled(not edits)
+	o.syncBtn:SetDisabled(not edits)
+	if o.rankHint then
+		if edits then
+			o.rankHint:SetColor(0.6, 0.6, 0.6)
+		else
+			o.rankHint:SetColor(0.4, 0.4, 0.4)
+		end
+	end
 end
 
 local function AddStatusLine(group, text, r, g, b)
@@ -1212,19 +1225,28 @@ function UI:RefreshOptions()
 	if not Sync then
 		AddStatusLine(status, "-")
 	else
-		local me = UnitName("player")
-		local myMember = GuildInfo:GetMember(me)
-		local myRank = myMember and myMember.rank or ""
-		if Sync:IsSelfAuthorized() then
-			AddStatusLine(status, format(L["Your rank (%s) is authorized to exchange edits."], myRank), 0.2, 1, 0.2)
+		local syncSettings = GuildInfo.db.profile.sync
+		if syncSettings.shareSelf then
+			AddStatusLine(status, L["Your specs and professions are shared with the guild."], 0.2, 1, 0.2)
 		else
-			AddStatusLine(status, format(L["Your rank (%s) is not authorized to exchange edits."], myRank), 1, 0.5, 0.3)
+			AddStatusLine(status, L["You are not sharing your specs and professions."], 0.6, 0.6, 0.6)
 		end
 
-		local last = Sync.lastSync
-		if last then
-			AddStatusLine(status, format(L["Last sync: %d entries from %s at %s"], last.count, last.from,
-				date("%d.%m.%Y %H:%M", last.time)), 0.8, 0.8, 0.8)
+		if syncSettings.enabled then
+			local me = UnitName("player")
+			local myMember = GuildInfo:GetMember(me)
+			local myRank = myMember and myMember.rank or ""
+			if Sync:IsSelfAuthorized() then
+				AddStatusLine(status, format(L["Your rank (%s) is authorized to exchange edits."], myRank), 0.2, 1, 0.2)
+			else
+				AddStatusLine(status, format(L["Your rank (%s) is not authorized to exchange edits."], myRank), 1, 0.5, 0.3)
+			end
+
+			local last = Sync.lastSync
+			if last then
+				AddStatusLine(status, format(L["Last sync: %d entries from %s at %s"], last.count, last.from,
+					date("%d.%m.%Y %H:%M", last.time)), 0.8, 0.8, 0.8)
+			end
 		end
 
 		local peers = Sync:GetPeerList()
@@ -1234,8 +1256,10 @@ function UI:RefreshOptions()
 			if peer.rank ~= "" then tinsert(line, C.ColorText(peer.rank, 0.85, 0.85, 0.85)) end
 			tinsert(line, C.ColorText("v" .. tostring(peer.version or "?"), 0.6, 0.6, 0.6))
 			tinsert(line, peer.online and C.ColorText(L["Online"], 0.2, 1, 0.2) or C.ColorText(L["Offline"], 0.6, 0.6, 0.6))
-			tinsert(line, peer.authorized and C.ColorText(L["authorized"], 0.2, 1, 0.2) or C.ColorText(L["not authorized"], 0.6, 0.6, 0.6))
-			if not peer.enabled then tinsert(line, C.ColorText(L["sync disabled"], 1, 0.5, 0.3)) end
+			if syncSettings.enabled then
+				tinsert(line, peer.authorized and C.ColorText(L["authorized"], 0.2, 1, 0.2) or C.ColorText(L["not authorized"], 0.6, 0.6, 0.6))
+				if not peer.enabled then tinsert(line, C.ColorText(L["edits off"], 1, 0.5, 0.3)) end
+			end
 			AddStatusLine(status, table.concat(line, "  |cff555555|||r  "))
 		end
 	end

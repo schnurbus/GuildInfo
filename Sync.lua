@@ -3,10 +3,12 @@ GuildInfo - Sync
 Austausch der nicht aus dem Gildenroster stammenden Daten per Addon-Nachrichten.
 
   * HELLO  (GUILD)   Anwesenheit/Version melden; Empfänger antworten per WHISPER
-  * SELF   (GUILD)   eigene Specs/Berufe an alle (Besitzer ist autoritativ)
+  * SELF   (GUILD)   eigene Specs/Berufe an alle (Besitzer ist autoritativ).
+                     Unabhängig vom Bearbeitungsabgleich, nur über "eigene Specs teilen".
   * EDIT   (WHISPER) manuelle Bearbeitungen (Main/Twink, Notiz, Fremd-Einträge)
-                     nur an berechtigte Online-Mitglieder (Rang <= maxRank)
-  * REQ    (WHISPER) Vollabgleich anfordern
+                     nur bei aktivem Bearbeitungsabgleich, an berechtigte
+                     Online-Mitglieder (Rang <= maxRank)
+  * REQ    (WHISPER) Vollabgleich anfordern (nur Bearbeitungsabgleich)
   * FULL   (WHISPER) Antwort auf REQ: alle Einträge mit Bearbeitungsstempel
 
 Der 3.3.5a-Client kennt keinen OFFICER-Kanal für Addon-Nachrichten, daher
@@ -49,8 +51,19 @@ local function MyName()
 	return UnitName("player")
 end
 
+-- Bearbeitungen (Main/Twink, Notizen) mit der Ranggrenze austauschen
 function Sync:IsEnabled()
 	return Settings().enabled and IsInGuild() and true or false
+end
+
+-- Eigene Specs/Berufe senden, unabhängig von der Ranggrenze
+function Sync:SharesSelf()
+	return Settings().shareSelf and IsInGuild() and true or false
+end
+
+-- HELLO/SELF laufen, sobald eine der beiden Optionen an ist
+function Sync:IsCommActive()
+	return self:IsEnabled() or self:SharesSelf()
 end
 
 -- Darf dieses Mitglied rangbeschränkte Daten senden/empfangen?
@@ -157,7 +170,7 @@ function Sync:Send(msg, distribution, target, prio)
 end
 
 function Sync:SendHello(replyTo)
-	if not self:IsEnabled() then return end
+	if not self:IsCommActive() then return end
 	local s = Settings()
 	local msg = { t = "HELLO", ver = GuildInfo.version, en = s.enabled, mr = s.maxRank, r = replyTo and true or nil }
 	if replyTo then
@@ -176,7 +189,7 @@ function Sync:BuildSelfMessage()
 end
 
 function Sync:SendSelf(target)
-	if not self:IsEnabled() or not Settings().shareSelf then return end
+	if not self:SharesSelf() then return end
 	local msg = self:BuildSelfMessage()
 	if not msg then return end
 	if self.selfTimer then
@@ -192,7 +205,7 @@ end
 
 -- Eigene Daten verzögert senden (mehrere Änderungen kurz hintereinander bündeln)
 function Sync:QueueSelf()
-	if not self:IsEnabled() or not Settings().shareSelf then return end
+	if not self:SharesSelf() then return end
 	if self.helloTimer then return end -- HELLO sendet SELF ohnehin mit
 	if self.selfTimer then
 		GuildInfo:CancelTimer(self.selfTimer, true)
@@ -210,7 +223,9 @@ function Sync:ScheduleHello()
 	self.helloTimer = GuildInfo:ScheduleTimer(function()
 		Sync.helloTimer = nil
 		Sync:SendHello()
-		GuildInfo:ScheduleTimer(function() Sync:RequestFull() end, REQUEST_DELAY)
+		if Sync:IsEnabled() then
+			GuildInfo:ScheduleTimer(function() Sync:RequestFull() end, REQUEST_DELAY)
+		end
 	end, HELLO_DELAY)
 end
 
@@ -221,7 +236,9 @@ function Sync:SyncNow()
 		self.helloTimer = nil
 	end
 	self:SendHello()
-	GuildInfo:ScheduleTimer(function() Sync:RequestFull() end, REQUEST_DELAY)
+	if self:IsEnabled() then
+		GuildInfo:ScheduleTimer(function() Sync:RequestFull() end, REQUEST_DELAY)
+	end
 end
 
 function Sync:BuildEntry(name)
@@ -323,7 +340,7 @@ end
 -------------------------------------------------------------------------------
 function Sync:OnCommReceived(prefix, message, distribution, sender)
 	if prefix ~= self.PREFIX or not sender or sender == MyName() then return end
-	if not self:IsEnabled() then return end
+	if not self:IsCommActive() then return end
 	-- Rangprüfung braucht Rosterdaten: bis zum ersten Scan puffern
 	if not Roster.scanned then
 		tinsert(self.queue, { message, distribution, sender })
@@ -352,8 +369,8 @@ function Sync:HandleMessage(message, distribution, sender)
 		self:OnSelf(msg, sender)
 	elseif distribution ~= "WHISPER" then
 		return -- EDIT/REQ/FULL nur per WHISPER akzeptieren
-	elseif not self:IsAuthorized(sender) or not self:IsSelfAuthorized() then
-		return -- Absender oder wir selbst nicht berechtigt
+	elseif not self:IsEnabled() or not self:IsAuthorized(sender) or not self:IsSelfAuthorized() then
+		return -- Bearbeitungsabgleich aus, oder Absender bzw. wir selbst nicht berechtigt
 	elseif t == "EDIT" or t == "FULL" then
 		self:OnEntries(msg, sender, t == "FULL")
 	elseif t == "REQ" then
