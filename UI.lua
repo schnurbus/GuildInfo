@@ -80,7 +80,7 @@ local COLUMNS = {
 	{ key = "offSpec",  title = L["Off Spec"],     width = 125 },
 	{ key = "prof1",    title = L["Profession 1"], width = 110 },
 	{ key = "prof2",    title = L["Profession 2"], width = 110 },
-	{ key = "main",     title = L["Main / Alt"],   flex = true },
+	{ key = "main",     title = L["Main / Alt"],   width = 140, flex = true },
 }
 
 -------------------------------------------------------------------------------
@@ -228,6 +228,7 @@ function UI:OnFrameClosed()
 	self.tabs = nil
 	self.body = nil
 	self.scroll = nil
+	self.table = nil
 	self.header = nil
 	self.detail = nil
 	self.tree = nil
@@ -265,7 +266,7 @@ end
 -------------------------------------------------------------------------------
 function UI:OnTabSelected(container, value)
 	container:ReleaseChildren()
-	self.body, self.scroll, self.header, self.detail, self.tree, self.rows, self.options = nil, nil, nil, nil, nil, nil, nil
+	self.body, self.scroll, self.table, self.header, self.detail, self.tree, self.rows, self.options = nil, nil, nil, nil, nil, nil, nil, nil
 	self.currentTab = value
 	GuildInfo.db.profile.lastTab = value
 
@@ -387,18 +388,18 @@ function UI:BuildMembersTab(container)
 	self.body = body
 	self.detailVisible = (self.selected ~= nil and GuildInfo:GetMember(self.selected) ~= nil)
 
-	-- Linke Seite: Kopfzeile + Liste ------------------------------------------
-	local left = AceGUI:Create("SimpleGroup")
-	left:SetAutoAdjustHeight(false)
-	left:SetLayout("Flow")
-	body:AddChild(left)
+	-- Linke Seite: Tabelle mit fester Kopfzeile und horizontalem Scrollen ------
+	local tbl = AceGUI:Create("GuildInfoTable")
+	tbl:SetAutoAdjustHeight(false)
+	tbl:SetLayout("List")
+	tbl:SetColumns(COLUMNS)
+	self.scrollStatus = self.scrollStatus or {}
+	tbl:SetStatusTable(self.scrollStatus)
+	body:AddChild(tbl)
+	self.table = tbl
+	self.scroll = tbl
 
-	local header = AceGUI:Create("GuildInfoRow")
-	header:SetFullWidth(true)
-	header:SetColumns(COLUMNS)
-	header:SetHeader(true)
-	header:SetOnlineDot(false)
-	header.dot:Hide()
+	local header = tbl:GetHeader()
 	header:SetCallback("OnColumnClick", function(widget, event, col)
 		local column = COLUMNS[col]
 		if not column then return end
@@ -422,17 +423,7 @@ function UI:BuildMembersTab(container)
 		GameTooltip:Show()
 	end)
 	header:SetCallback("OnLeave", function() GameTooltip:Hide() end)
-	left:AddChild(header)
 	self.header = header
-
-	local scroll = AceGUI:Create("ScrollFrame")
-	scroll:SetFullWidth(true)
-	scroll:SetFullHeight(true)
-	scroll:SetLayout("List")
-	self.scrollStatus = self.scrollStatus or {}
-	scroll:SetStatusTable(self.scrollStatus)
-	left:AddChild(scroll)
-	self.scroll = scroll
 
 	-- Rechte Seite: Detailpanel (ein-/ausblendbar) ---------------------------
 	local right = AceGUI:Create("SimpleGroup")
@@ -533,10 +524,10 @@ local function FillRow(row, name, m, indent)
 end
 
 function UI:RefreshList()
-	if not self.scroll then return end
+	if not self.table then return end
 	self:UpdateHeader()
 
-	local scroll = self.scroll
+	local scroll = self.table
 	scroll:ReleaseChildren()
 	scroll:PauseLayout()
 
