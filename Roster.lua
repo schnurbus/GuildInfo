@@ -51,8 +51,7 @@ local function WithOfflineMembers(fn, ...)
 end
 
 function Roster:Scan()
-	if not IsInGuild() then return end
-	local guild = GuildInfo:GetGuildData()
+	local guild = GuildInfo:GetLiveGuildData()
 	if not guild then return end
 	WithOfflineMembers(self.ScanMembers, self, guild)
 	self:UpdateSelf()
@@ -173,7 +172,7 @@ local function DetectProfessions()
 end
 
 function Roster:UpdateSelf()
-	local guild = GuildInfo:GetGuildData()
+	local guild = GuildInfo:GetLiveGuildData()
 	if not guild then return end
 	local myName = UnitName("player")
 	if not myName then return end
@@ -352,7 +351,7 @@ end
 -- Rückgabe: { mains = n, twinks = n, changes = n, unresolved = { name, ... }, changed = { name, ... } }
 function Roster:AutoDetectMainsAndTwinks()
 	local stats = { mains = 0, twinks = 0, changes = 0, unresolved = {}, changed = {} }
-	local guild = GuildInfo:GetGuildData()
+	local guild = GuildInfo:GetLiveGuildData()
 	if not guild then return stats end
 
 	-- Zustand vor der Erkennung merken, um geänderte Einträge zu ermitteln

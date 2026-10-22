@@ -14,6 +14,10 @@ Austausch der nicht aus dem Gildenroster stammenden Daten per Addon-Nachrichten.
 Der 3.3.5a-Client kennt keinen OFFICER-Kanal für Addon-Nachrichten, daher
 werden rangbeschränkte Daten per WHISPER verteilt und zusätzlich beim Empfang
 auf den Rang des Absenders geprüft.
+
+Jede Nachricht trägt den aktuellen Gildennamen (Feld g). Scan und Versand
+nutzen nur GetLiveGuildName(), nie lastGuild — das ist accountweit und würde
+sonst die Daten von Char A (Gilde X) über Char B (Gilde Z) verteilen.
 -------------------------------------------------------------------------------]]
 local ADDON_NAME, ns = ...
 if type(ns) ~= "table" then ns = _G.GuildInfoNS end
@@ -53,12 +57,12 @@ end
 
 -- Bearbeitungen (Main/Twink, Notizen) mit der Ranggrenze austauschen
 function Sync:IsEnabled()
-	return Settings().enabled and IsInGuild() and true or false
+	return Settings().enabled and GuildInfo:GetLiveGuildName() and true or false
 end
 
 -- Eigene Specs/Berufe senden, unabhängig von der Ranggrenze
 function Sync:SharesSelf()
-	return Settings().shareSelf and IsInGuild() and true or false
+	return Settings().shareSelf and GuildInfo:GetLiveGuildName() and true or false
 end
 
 -- HELLO/SELF laufen, sobald eine der beiden Optionen an ist
@@ -69,7 +73,7 @@ end
 -- Darf dieses Mitglied rangbeschränkte Daten senden/empfangen?
 function Sync:IsAuthorized(name)
 	if not name then return false end
-	local guild = GuildInfo:GetGuildData()
+	local guild = GuildInfo:GetLiveGuildData()
 	if not guild then return false end
 	local m = rawget(guild.members, name)
 	if not m or not m.inGuild then return false end
@@ -91,7 +95,7 @@ function Sync:GetRankList()
 		return list
 	end
 	-- Fallback: Ränge aus den bekannten Mitgliedern ableiten
-	local guild = GuildInfo:GetGuildData()
+	local guild = GuildInfo:GetLiveGuildData()
 	if not guild then return list end
 	local byIndex = {}
 	for _, m in pairs(guild.members) do
@@ -109,7 +113,7 @@ end
 -- Berechtigte Online-Mitglieder mit Addon (ohne uns selbst)
 function Sync:GetAuthorizedOnlinePeers()
 	local result = {}
-	local guild = GuildInfo:GetGuildData()
+	local guild = GuildInfo:GetLiveGuildData()
 	if not guild then return result end
 	local me = MyName()
 	for name, peer in pairs(self.peers) do
@@ -127,7 +131,7 @@ end
 -- Sortierte Peer-Liste für die Anzeige
 function Sync:GetPeerList()
 	local list = {}
-	local guild = GuildInfo:GetGuildData()
+	local guild = GuildInfo:GetLiveGuildData()
 	for name, peer in pairs(self.peers) do
 		local m = guild and rawget(guild.members, name)
 		tinsert(list, {
@@ -198,11 +202,34 @@ function Sync:NotifyUI()
 end
 
 -------------------------------------------------------------------------------
+-- Sitzung
+-------------------------------------------------------------------------------
+function Sync:ResetSession()
+	self.peers = {}
+	self.queue = {}
+	self.lastSync = nil
+	if self.helloTimer then
+		GuildInfo:CancelTimer(self.helloTimer, true)
+		self.helloTimer = nil
+	end
+	if self.selfTimer then
+		GuildInfo:CancelTimer(self.selfTimer, true)
+		self.selfTimer = nil
+	end
+	if self.requestTimer then
+		GuildInfo:CancelTimer(self.requestTimer, true)
+		self.requestTimer = nil
+	end
+end
+
+-------------------------------------------------------------------------------
 -- Senden
 -------------------------------------------------------------------------------
 function Sync:Send(msg, distribution, target, prio)
-	if not IsInGuild() then return end
+	local guildName = GuildInfo:GetLiveGuildName()
+	if not guildName then return end
 	msg.v = self.PROTOCOL
+	msg.g = guildName
 	local text = GuildInfo:Serialize(msg)
 	GuildInfo:SendCommMessage(self.PREFIX, text, distribution, target, prio or "NORMAL")
 end
@@ -221,7 +248,8 @@ function Sync:SendHello(replyTo)
 end
 
 function Sync:BuildSelfMessage()
-	local m = GuildInfo:GetMember(MyName())
+	local guild = GuildInfo:GetLiveGuildData()
+	local m = guild and rawget(guild.members, MyName())
 	if not m then return nil end
 	return { t = "SELF", ms = m.mainSpec, os = m.offSpec, p1 = m.prof1, p2 = m.prof2 }
 end
@@ -262,7 +290,13 @@ function Sync:ScheduleHello()
 		Sync.helloTimer = nil
 		Sync:SendHello()
 		if Sync:IsEnabled() then
-			GuildInfo:ScheduleTimer(function() Sync:RequestFull() end, REQUEST_DELAY)
+			if Sync.requestTimer then
+				GuildInfo:CancelTimer(Sync.requestTimer, true)
+			end
+			Sync.requestTimer = GuildInfo:ScheduleTimer(function()
+				Sync.requestTimer = nil
+				Sync:RequestFull()
+			end, REQUEST_DELAY)
 		end
 	end, HELLO_DELAY)
 end
@@ -275,12 +309,18 @@ function Sync:SyncNow()
 	end
 	self:SendHello()
 	if self:IsEnabled() then
-		GuildInfo:ScheduleTimer(function() Sync:RequestFull() end, REQUEST_DELAY)
+		if self.requestTimer then
+			GuildInfo:CancelTimer(self.requestTimer, true)
+		end
+		self.requestTimer = GuildInfo:ScheduleTimer(function()
+			Sync.requestTimer = nil
+			Sync:RequestFull()
+		end, REQUEST_DELAY)
 	end
 end
 
 function Sync:BuildEntry(name)
-	local guild = GuildInfo:GetGuildData()
+	local guild = GuildInfo:GetLiveGuildData()
 	local m = guild and rawget(guild.members, name)
 	if not m then return nil end
 	return {
@@ -298,7 +338,7 @@ function Sync:BuildEntry(name)
 end
 
 function Sync:StampMembers(names)
-	local guild = GuildInfo:GetGuildData()
+	local guild = GuildInfo:GetLiveGuildData()
 	if not guild then return end
 	local now, me = time(), MyName()
 	for _, name in ipairs(names) do
@@ -342,7 +382,7 @@ end
 
 function Sync:SendFull(target)
 	if not self:IsEnabled() or not self:IsSelfAuthorized() then return end
-	local guild = GuildInfo:GetGuildData()
+	local guild = GuildInfo:GetLiveGuildData()
 	if not guild then return end
 	local entries = {}
 	for name, m in pairs(guild.members) do
@@ -358,7 +398,7 @@ end
 -- Vollabgleich beim ranghöchsten berechtigten Online-Peer anfordern
 function Sync:RequestFull()
 	if not self:IsEnabled() or not self:IsSelfAuthorized() then return end
-	local guild = GuildInfo:GetGuildData()
+	local guild = GuildInfo:GetLiveGuildData()
 	if not guild then return end
 	local best, bestRank
 	for _, name in ipairs(self:GetAuthorizedOnlinePeers()) do
@@ -379,15 +419,19 @@ end
 function Sync:OnCommReceived(prefix, message, distribution, sender)
 	if prefix ~= self.PREFIX or not sender or sender == MyName() then return end
 	if not self:IsCommActive() then return end
-	-- Rangprüfung braucht Rosterdaten: bis zum ersten Scan puffern
-	if not Roster.scanned then
-		tinsert(self.queue, { message, distribution, sender })
+	-- Gildenname und Roster müssen feststehen, sonst droht ein Abgleich
+	-- gegen lastGuild eines anderen Chars auf demselben Account.
+	if not GuildInfo:GetLiveGuildName() or not Roster.scanned then
+		if #self.queue < 100 then
+			tinsert(self.queue, { message, distribution, sender })
+		end
 		return
 	end
 	self:HandleMessage(message, distribution, sender)
 end
 
 function Sync:OnRosterScanned()
+	if not GuildInfo:GetLiveGuildName() then return end
 	if #self.queue == 0 then return end
 	local queue = self.queue
 	self.queue = {}
@@ -399,6 +443,8 @@ end
 function Sync:HandleMessage(message, distribution, sender)
 	local ok, msg = GuildInfo:Deserialize(message)
 	if not ok or type(msg) ~= "table" or msg.v ~= self.PROTOCOL then return end
+	local live = GuildInfo:GetLiveGuildName()
+	if not live or msg.g ~= live then return end
 
 	local t = msg.t
 	if t == "HELLO" then
@@ -432,7 +478,7 @@ function Sync:OnHello(msg, sender)
 end
 
 function Sync:OnSelf(msg, sender)
-	local guild = GuildInfo:GetGuildData()
+	local guild = GuildInfo:GetLiveGuildData()
 	if not guild then return end
 	local m = rawget(guild.members, sender)
 	if not m then return end -- unbekannt (kein Gildenmitglied laut Roster)
@@ -448,7 +494,7 @@ end
 
 function Sync:ApplyEntry(entry, sender)
 	if type(entry) ~= "table" or type(entry.n) ~= "string" then return false end
-	local guild = GuildInfo:GetGuildData()
+	local guild = GuildInfo:GetLiveGuildData()
 	if not guild then return false end
 	local m = rawget(guild.members, entry.n)
 	if not m then return false end -- keine Phantom-Einträge anlegen

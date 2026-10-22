@@ -100,6 +100,7 @@ function GuildInfo:OnEnable()
 
 	self:ScheduleTimer("HookGuildFrame", 1)
 	self:RequestRoster()
+	self:GetLiveGuildName()
 
 	self:Print(L["Loaded. Type /gi to open the window."])
 end
@@ -113,13 +114,12 @@ end
 -------------------------------------------------------------------------------
 function GuildInfo:PLAYER_ENTERING_WORLD()
 	self:RequestRoster()
-	if self.Sync then
-		self.Sync:ScheduleHello()
-	end
+	self:GetLiveGuildName()
 end
 
 function GuildInfo:PLAYER_GUILD_UPDATE(event, unit)
 	if unit and unit ~= "player" then return end
+	self:GetLiveGuildName()
 	self:RequestRoster()
 end
 
@@ -180,16 +180,58 @@ end
 
 -------------------------------------------------------------------------------
 -- Gildendaten
+--
+-- guilds[name] trennt die gespeicherten Daten nach Gildenname. lastGuild liegt
+-- trotzdem in factionrealm und gilt damit für alle Chars derselben Fraktion auf
+-- demselben Realm. Es darf nur die UI füllen, wenn der aktuelle Char in keiner
+-- Gilde ist — niemals Scan oder Sync, sonst würde Char B (Gilde Z) die Daten
+-- von Char A (Gilde X) lesen und teilen.
 -------------------------------------------------------------------------------
-function GuildInfo:GetGuildName()
-	if IsInGuild() then
-		local name = GetGuildInfo("player")
-		if name and name ~= "" then
-			self.db.factionrealm.lastGuild = name
-			return name
+function GuildInfo:SetCurrentGuild(name)
+	if self.currentGuild == name then return end
+	self.currentGuild = name
+	if self.Roster then
+		self.Roster.scanned = false
+		self.Roster.lastSelfSig = nil
+	end
+	if self.Sync then
+		self.Sync:ResetSession()
+		if name then
+			self.Sync:ScheduleHello()
 		end
 	end
+	if self.UI and self.UI:IsOpen() then
+		self.UI:Refresh()
+	end
+end
+
+-- Nur der Gildenname des eingeloggten Chars; kein Fallback auf lastGuild.
+function GuildInfo:GetLiveGuildName()
+	if not IsInGuild() then
+		self:SetCurrentGuild(nil)
+		return nil
+	end
+	local name = GetGuildInfo("player")
+	if type(name) ~= "string" or name == "" then
+		return nil
+	end
+	self.db.factionrealm.lastGuild = name
+	self:SetCurrentGuild(name)
+	return name
+end
+
+-- UI: aktuelle Gilde, oder lastGuild nur wenn der Char in keiner Gilde ist.
+function GuildInfo:GetGuildName()
+	local live = self:GetLiveGuildName()
+	if live then return live end
+	if IsInGuild() then return nil end
 	return self.db.factionrealm.lastGuild
+end
+
+function GuildInfo:GetLiveGuildData()
+	local name = self:GetLiveGuildName()
+	if not name then return nil end
+	return self.db.factionrealm.guilds[name], name
 end
 
 function GuildInfo:GetGuildData()
