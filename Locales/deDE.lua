@@ -79,6 +79,9 @@ L["Former member"] = "Ehemaliges Mitglied"
 L["Auto-detect mains and alts from ranks and notes"] = "Mains und Twinks anhand von Rängen und Notizen ermitteln"
 L["Auto-detect: %d mains, %d alts assigned, %d alts unresolved (%d changes)."] = "Erkennung: %d Mains, %d Twinks zugeordnet, %d Twinks nicht zuordenbar (%d Änderungen)."
 L["Alts without identifiable main: %s"] = "Twinks ohne erkennbaren Main: %s"
+L["Periodically auto-detect mains and alts"] = "Mains und Twinks periodisch automatisch erkennen"
+L["Runs main/alt detection on login and every set interval from ranks and notes."] = "Beim Start und im eingestellten Intervall anhand von Rängen und Notizen erkennen."
+L["Interval (minutes)"] = "Intervall (Minuten)"
 
 -- Detailpanel
 L["Details"] = "Details"

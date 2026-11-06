@@ -79,6 +79,9 @@ L["Former member"] = true
 L["Auto-detect mains and alts from ranks and notes"] = true
 L["Auto-detect: %d mains, %d alts assigned, %d alts unresolved (%d changes)."] = true
 L["Alts without identifiable main: %s"] = true
+L["Periodically auto-detect mains and alts"] = true
+L["Runs main/alt detection on login and every set interval from ranks and notes."] = true
+L["Interval (minutes)"] = true
 
 -- Detail panel
 L["Details"] = true

@@ -30,6 +30,9 @@ local defaults = {
 		sortKey      = "name",
 		sortAsc      = true,
 		autoDetect   = true,
+		-- Main/Twink-Abgleich (/gi detect) periodisch
+		autoDetectTwinks         = false,
+		autoDetectTwinksInterval = 30, -- Minuten
 		lastTab      = "members",
 		minimapHint  = true,
 		sync = {
@@ -101,12 +104,14 @@ function GuildInfo:OnEnable()
 	self:ScheduleTimer("HookGuildFrame", 1)
 	self:RequestRoster()
 	self:GetLiveGuildName()
+	self:UpdateTwinkDetectTimer()
 
 	self:Print(L["Loaded. Type /gi to open the window."])
 end
 
 function GuildInfo:OnDisable()
 	self:StopRosterTicker()
+	self:StopTwinkDetectTimer()
 end
 
 -------------------------------------------------------------------------------
@@ -176,6 +181,74 @@ function GuildInfo:StopRosterTicker()
 		self:CancelTimer(self.rosterTicker, true)
 		self.rosterTicker = nil
 	end
+end
+
+-------------------------------------------------------------------------------
+-- Periodischer Main/Twink-Abgleich
+-------------------------------------------------------------------------------
+local TWINK_DETECT_MIN_INTERVAL = 1
+local TWINK_DETECT_MAX_INTERVAL = 180
+local TWINK_DETECT_START_DELAY  = 8 -- Sekunden nach Start/Aktivierung (Roster braucht Zeit)
+
+local function ClampTwinkDetectInterval(minutes)
+	minutes = tonumber(minutes) or 30
+	if minutes < TWINK_DETECT_MIN_INTERVAL then return TWINK_DETECT_MIN_INTERVAL end
+	if minutes > TWINK_DETECT_MAX_INTERVAL then return TWINK_DETECT_MAX_INTERVAL end
+	return math.floor(minutes + 0.5)
+end
+
+function GuildInfo:GetTwinkDetectInterval()
+	return ClampTwinkDetectInterval(self.db.profile.autoDetectTwinksInterval)
+end
+
+function GuildInfo:StopTwinkDetectTimer()
+	if self.twinkDetectStartTimer then
+		self:CancelTimer(self.twinkDetectStartTimer, true)
+		self.twinkDetectStartTimer = nil
+	end
+	if self.twinkDetectTicker then
+		self:CancelTimer(self.twinkDetectTicker, true)
+		self.twinkDetectTicker = nil
+	end
+	if self.twinkDetectRetryTimer then
+		self:CancelTimer(self.twinkDetectRetryTimer, true)
+		self.twinkDetectRetryTimer = nil
+	end
+end
+
+-- Startet bzw. aktualisiert den periodischen Abgleich gemäß den Profileinstellungen.
+function GuildInfo:UpdateTwinkDetectTimer()
+	self:StopTwinkDetectTimer()
+	self.twinkDetectRetries = nil
+	if not self.db.profile.autoDetectTwinks then return end
+
+	local seconds = self:GetTwinkDetectInterval() * 60
+	-- Einmal zeitnah nach dem Start (bzw. nach dem Einschalten der Option)
+	self.twinkDetectStartTimer = self:ScheduleTimer("RunScheduledTwinkDetect", TWINK_DETECT_START_DELAY)
+	-- Danach im gewählten Intervall
+	self.twinkDetectTicker = self:ScheduleRepeatingTimer("RunScheduledTwinkDetect", seconds)
+end
+
+function GuildInfo:RunScheduledTwinkDetect()
+	if not self.db.profile.autoDetectTwinks then return end
+	if not IsInGuild() then
+		self.twinkDetectRetries = nil
+		return
+	end
+	-- Ohne geladenen Roster nichts Sinnvolles erkennbar — kurz später erneut versuchen
+	if not self.Roster or not self.Roster.scanned then
+		self:RequestRoster()
+		self.twinkDetectRetries = (self.twinkDetectRetries or 0) + 1
+		if self.twinkDetectRetries <= 6 and not self.twinkDetectRetryTimer then
+			self.twinkDetectRetryTimer = self:ScheduleTimer(function()
+				self.twinkDetectRetryTimer = nil
+				self:RunScheduledTwinkDetect()
+			end, 5)
+		end
+		return
+	end
+	self.twinkDetectRetries = nil
+	self:AutoDetect({ quiet = true })
 end
 
 -------------------------------------------------------------------------------
@@ -278,17 +351,23 @@ function GuildInfo:HandleSlash(input)
 	end
 end
 
--- Main/Twink-Status aller Mitglieder anhand von Rang und Notizen ermitteln
-function GuildInfo:AutoDetect()
+-- Main/Twink-Status aller Mitglieder anhand von Rang und Notizen ermitteln.
+-- opts.quiet: bei automatischem Lauf nur bei Änderungen in den Chat schreiben
+function GuildInfo:AutoDetect(opts)
+	opts = opts or {}
 	if not IsInGuild() or not self.Roster then
-		self:Print(L["Not in a guild"])
+		if not opts.quiet then
+			self:Print(L["Not in a guild"])
+		end
 		return
 	end
 	local stats = self.Roster:AutoDetectMainsAndTwinks()
-	self:Print(L["Auto-detect: %d mains, %d alts assigned, %d alts unresolved (%d changes)."]:format(
-		stats.mains, stats.twinks, #stats.unresolved, stats.changes))
-	if #stats.unresolved > 0 then
-		self:Print(L["Alts without identifiable main: %s"]:format(table.concat(stats.unresolved, ", ")))
+	if not opts.quiet or stats.changes > 0 then
+		self:Print(L["Auto-detect: %d mains, %d alts assigned, %d alts unresolved (%d changes)."]:format(
+			stats.mains, stats.twinks, #stats.unresolved, stats.changes))
+		if #stats.unresolved > 0 then
+			self:Print(L["Alts without identifiable main: %s"]:format(table.concat(stats.unresolved, ", ")))
+		end
 	end
 	-- Geänderte Einträge stempeln und an berechtigte Mitglieder senden
 	if self.Sync and stats.changed and #stats.changed > 0 then

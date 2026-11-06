@@ -1100,6 +1100,43 @@ function UI:BuildOptionsTab(container)
 	end)
 	general:AddChild(autoCB)
 
+	local twinkDetectCB = AceGUI:Create("CheckBox")
+	twinkDetectCB:SetLabel(L["Periodically auto-detect mains and alts"])
+	twinkDetectCB:SetFullWidth(true)
+	twinkDetectCB:SetValue(p.autoDetectTwinks)
+	twinkDetectCB:SetCallback("OnValueChanged", function(widget, event, value)
+		p.autoDetectTwinks = value and true or false
+		UI:UpdateOptionsState()
+		GuildInfo:UpdateTwinkDetectTimer()
+	end)
+	general:AddChild(twinkDetectCB)
+	o.twinkDetectCB = twinkDetectCB
+
+	local twinkDetectHint = AceGUI:Create("Label")
+	twinkDetectHint:SetFullWidth(true)
+	twinkDetectHint:SetColor(0.6, 0.6, 0.6)
+	twinkDetectHint:SetText(L["Runs main/alt detection on login and every set interval from ranks and notes."])
+	general:AddChild(twinkDetectHint)
+	o.twinkDetectHint = twinkDetectHint
+
+	local intervalSlider = AceGUI:Create("Slider")
+	intervalSlider:SetLabel(L["Interval (minutes)"])
+	intervalSlider:SetFullWidth(true)
+	intervalSlider:SetSliderValues(1, 180, 1)
+	intervalSlider:SetValue(GuildInfo:GetTwinkDetectInterval())
+	intervalSlider:SetCallback("OnValueChanged", function(widget, event, value)
+		p.autoDetectTwinksInterval = math.floor((tonumber(value) or 30) + 0.5)
+	end)
+	intervalSlider:SetCallback("OnMouseUp", function(widget, event, value)
+		p.autoDetectTwinksInterval = math.floor((tonumber(value) or 30) + 0.5)
+		local clamped = GuildInfo:GetTwinkDetectInterval()
+		p.autoDetectTwinksInterval = clamped
+		widget:SetValue(clamped)
+		GuildInfo:UpdateTwinkDetectTimer()
+	end)
+	general:AddChild(intervalSlider)
+	o.twinkDetectInterval = intervalSlider
+
 	-- Synchronisation ----------------------------------------------------------
 	local syncGroup = AceGUI:Create("InlineGroup")
 	syncGroup:SetTitle(L["Synchronization"])
@@ -1194,6 +1231,17 @@ function UI:UpdateOptionsState()
 			o.rankHint:SetColor(0.6, 0.6, 0.6)
 		else
 			o.rankHint:SetColor(0.4, 0.4, 0.4)
+		end
+	end
+	local twinkDetect = GuildInfo.db.profile.autoDetectTwinks
+	if o.twinkDetectInterval then
+		o.twinkDetectInterval:SetDisabled(not twinkDetect)
+	end
+	if o.twinkDetectHint then
+		if twinkDetect then
+			o.twinkDetectHint:SetColor(0.6, 0.6, 0.6)
+		else
+			o.twinkDetectHint:SetColor(0.4, 0.4, 0.4)
 		end
 	end
 end
