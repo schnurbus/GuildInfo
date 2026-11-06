@@ -37,6 +37,7 @@ L["not authorized"] = true
 L["edits off"] = true
 L["Sync: %d entries received from %s."] = true
 L["A newer version of GuildInfo was seen: v%s (you have v%s)."] = true
+L["(v%s available)"] = true
 L["Last edited by %s on %s"] = true
 
 -- Filters

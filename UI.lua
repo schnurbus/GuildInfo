@@ -244,7 +244,13 @@ function UI:UpdateTitle(displayed)
 	if displayed == nil then
 		displayed = #Roster:GetFilteredList(self:GetFilterOptions())
 	end
-	self.frame:SetStatusText(format(L["%d members (%d shown), %d online"], total, displayed, online) .. "   |cff808080v" .. GuildInfo.version .. "|r")
+	local status = format(L["%d members (%d shown), %d online"], total, displayed, online)
+		.. "   |cff808080v" .. GuildInfo.version .. "|r"
+	local newer = GuildInfo.Sync and GuildInfo.Sync.newerVersion
+	if newer then
+		status = status .. "  |cffff9900" .. format(L["(v%s available)"], newer) .. "|r"
+	end
+	self.frame:SetStatusText(status)
 end
 
 function UI:Refresh()

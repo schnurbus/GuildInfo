@@ -180,10 +180,14 @@ local function IsNewerVersion(remote, localVer)
 	return false
 end
 
--- Einmal pro Sitzung und höchstens einmal pro Kalendertag
+-- Merkt die neueste gesehene Version und gibt höchstens einmal pro Sitzung
+-- und Kalendertag einen Chat-Hinweis aus.
 function Sync:MaybeNotifyNewerVersion(remote)
-	if self.versionNotified then return end
 	if not IsNewerVersion(remote, GuildInfo.version) then return end
+	if not self.newerVersion or IsNewerVersion(remote, self.newerVersion) then
+		self.newerVersion = remote
+	end
+	if self.versionNotified then return end
 	self.versionNotified = true
 	local today = date("%Y-%m-%d")
 	if GuildInfo.db.global.versionNoticeDay == today then return end
