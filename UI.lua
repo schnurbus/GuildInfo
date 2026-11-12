@@ -90,6 +90,123 @@ local function ColoredName(name, classFile)
 	return C.ColorText(name, C.GetClassColor(classFile))
 end
 
+-- Anzahl in Klammern, etwas kleiner als der übrige Eintrag.
+-- WoW kann die Schriftgröße nicht mitten in einem FontString ändern, deshalb
+-- hängt die Zahl als eigener Text am Ende des Klassennamens.
+local function EnsureClassCountLabel(parent, sample)
+	local label = parent.giClassCount
+	if label then return label end
+	label = parent:CreateFontString(nil, "OVERLAY")
+	local font, size, flags = sample:GetFont()
+	local smaller = (size or 10) - 2
+	if smaller < 8 then smaller = 8 end
+	label:SetFont(font or "Fonts\\FRIZQT__.TTF", smaller, flags or "")
+	label:SetTextColor(0.7, 0.7, 0.7)
+	label:SetJustifyH("LEFT")
+	label:Hide()
+	parent.giClassCount = label
+	return label
+end
+
+local function PlaceClassCount(fs, count)
+	if not fs then return end
+	local label = EnsureClassCountLabel(fs:GetParent(), fs)
+	if count == nil then
+		label:Hide()
+		return
+	end
+	label:SetText("(" .. count .. ")")
+	label:ClearAllPoints()
+	label:SetPoint("LEFT", fs, "LEFT", fs:GetStringWidth() + 2, 0)
+	label:Show()
+end
+
+local function BindClassCountItem(item)
+	if item.giCountBound then return end
+	item.giCountBound = true
+	local orig = item.OnRelease
+	item.OnRelease = function(self)
+		if self.frame.giClassCount then
+			self.frame.giClassCount:Hide()
+		end
+		if orig then orig(self) end
+	end
+end
+
+local function BindClassDropdown(dd)
+	if dd.giCountBound then return end
+	dd.giCountBound = true
+	dd.giSavedJustify = dd.text:GetJustifyH()
+	local origSetText = dd.SetText
+	dd.SetText = function(self, text)
+		origSetText(self, text)
+		if UI.classDD ~= self or not text or text == "" then
+			PlaceClassCount(self.text, nil)
+		end
+	end
+	local origSetValue = dd.SetValue
+	dd.SetValue = function(self, value)
+		origSetValue(self, value)
+		if UI.classDD ~= self then return end
+		local counts, total = Roster:GetClassCounts()
+		if not value or value == "" then
+			self.giCount = total
+		else
+			self.giCount = counts[value] or 0
+		end
+		PlaceClassCount(self.text, self.giCount)
+	end
+	local origRelease = dd.OnRelease
+	dd.OnRelease = function(self)
+		if UI.classDD == self then
+			UI.classDD = nil
+		end
+		if origRelease then origRelease(self) end
+		PlaceClassCount(self.text, nil)
+		self.giCount = nil
+		if self.giSavedJustify then
+			self.text:SetJustifyH(self.giSavedJustify)
+		end
+	end
+	-- Nach dem Öffnen noch einmal setzen: vorher kann die Textbreite 0 sein.
+	dd.button:HookScript("OnClick", function(button)
+		if UI.classDD == button.obj then
+			UI:ApplyClassCounts()
+		end
+	end)
+	dd.frame:HookScript("OnShow", function(frame)
+		if UI.classDD and UI.classDD.frame == frame then
+			UI:ApplyClassCounts()
+		end
+	end)
+end
+
+function UI:ApplyClassCounts()
+	local dd = self.classDD
+	if not dd or not dd.pullout or not dd.pullout.items then return end
+	local counts, total = Roster:GetClassCounts()
+	for _, item in ipairs(dd.pullout.items) do
+		if item.userdata and item.text then
+			BindClassCountItem(item)
+			local value = item.userdata.value
+			if value == "" then
+				PlaceClassCount(item.text, total)
+			else
+				PlaceClassCount(item.text, counts[value] or 0)
+			end
+		end
+	end
+	local selected = dd.value
+	if selected == nil then
+		dd.giCount = nil
+	elseif selected == "" then
+		dd.giCount = total
+	else
+		dd.giCount = counts[selected] or 0
+	end
+	PlaceClassCount(dd.text, dd.giCount)
+end
+
 local function SpecText(specId, withRole)
 	local spec = C.GetSpec(specId)
 	if not spec then return "" end
@@ -219,6 +336,7 @@ function UI:GetEscapeProxy()
 end
 
 function UI:OnFrameClosed()
+	self.classDD = nil
 	GuildInfo:StopRosterTicker()
 	GameTooltip:Hide()
 	self.frame = nil
@@ -271,6 +389,7 @@ end
 -- Tabs
 -------------------------------------------------------------------------------
 function UI:OnTabSelected(container, value)
+	self.classDD = nil
 	container:ReleaseChildren()
 	self.body, self.scroll, self.table, self.header, self.detail, self.tree, self.rows, self.options = nil, nil, nil, nil, nil, nil, nil, nil
 	self.currentTab = value
@@ -316,7 +435,10 @@ function UI:BuildMembersTab(container)
 
 	local classDD = AceGUI:Create("Dropdown")
 	classDD:SetLabel(nil)
-	classDD:SetWidth(140)
+	classDD:SetWidth(180)
+	BindClassDropdown(classDD)
+	classDD.text:SetJustifyH("LEFT")
+	self.classDD = classDD
 	classDD:SetList({})
 	classDD:AddItem("", L["All classes"])
 	for _, classFile in ipairs(C.CLASS_ORDER) do
@@ -328,6 +450,7 @@ function UI:BuildMembersTab(container)
 		UI:RefreshList()
 	end)
 	filterGroup:AddChild(classDD)
+	self:ApplyClassCounts()
 
 	local roleDD = AceGUI:Create("Dropdown")
 	roleDD:SetLabel(nil)
@@ -530,6 +653,7 @@ local function FillRow(row, name, m, indent)
 end
 
 function UI:RefreshList()
+	self:ApplyClassCounts()
 	if not self.table then return end
 	self:UpdateHeader()
 

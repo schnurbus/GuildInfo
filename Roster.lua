@@ -578,3 +578,20 @@ function Roster:GetCounts()
 	end
 	return total, online
 end
+
+-- Anzahl aktueller Gildenmitglieder je Klasse (classFile -> n) und Gesamtzahl.
+-- Ehemalige Mitglieder zählen nicht mit.
+function Roster:GetClassCounts()
+	local counts, total = {}, 0
+	local guild = GuildInfo:GetGuildData()
+	if not guild then return counts, 0 end
+	for _, m in pairs(guild.members) do
+		if m.inGuild then
+			total = total + 1
+			if m.classFile then
+				counts[m.classFile] = (counts[m.classFile] or 0) + 1
+			end
+		end
+	end
+	return counts, total
+end
